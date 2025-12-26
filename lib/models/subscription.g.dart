@@ -22,13 +22,16 @@ class SubscriptionAdapter extends TypeAdapter<Subscription> {
       cycle: fields[2] as String,
       nextDueMs: fields[3] as int,
       category: fields[4] as String,
+      isCancelled: fields[5] as bool,
+      remindersOn: fields[6] as bool,
+      remindDaysBefore: fields[7] as int,
     );
   }
 
   @override
   void write(BinaryWriter writer, Subscription obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.subName)
       ..writeByte(1)
@@ -38,7 +41,13 @@ class SubscriptionAdapter extends TypeAdapter<Subscription> {
       ..writeByte(3)
       ..write(obj.nextDueMs)
       ..writeByte(4)
-      ..write(obj.category);
+      ..write(obj.category)
+      ..writeByte(5)
+      ..write(obj.isCancelled)
+      ..writeByte(6)
+      ..write(obj.remindersOn)
+      ..writeByte(7)
+      ..write(obj.remindDaysBefore);
   }
 
   @override

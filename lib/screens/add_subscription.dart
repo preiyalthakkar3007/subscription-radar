@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+
 import '../models/subscription.dart';
 
 class AddSubscriptionScreen extends StatefulWidget {
-  const AddSubscriptionScreen({super.key});
+  final Subscription? existing;
+  final int? existingKey;
+
+  const AddSubscriptionScreen({super.key, this.existing, this.existingKey});
 
   @override
   State<AddSubscriptionScreen> createState() => _AddSubscriptionScreenState();
@@ -20,6 +24,19 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
   DateTime _dueDate = DateTime.now().add(const Duration(days: 30));
 
   @override
+  void initState() {
+    super.initState();
+    final s = widget.existing;
+    if (s != null) {
+      _nameCtrl.text = s.subName;
+      _costCtrl.text = s.cost.toStringAsFixed(0);
+      _cycle = s.cycle;
+      _category = s.category;
+      _dueDate = s.nextDueDate;
+    }
+  }
+
+  @override
   void dispose() {
     _nameCtrl.dispose();
     _costCtrl.dispose();
@@ -33,10 +50,7 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
     );
-
-    if (picked != null) {
-      setState(() => _dueDate = picked);
-    }
+    if (picked != null) setState(() => _dueDate = picked);
   }
 
   Future<void> _save() async {
@@ -45,16 +59,27 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
     final name = _nameCtrl.text.trim();
     final cost = double.parse(_costCtrl.text.trim());
 
-    final sub = Subscription(
+    final box = Hive.box<Subscription>('subscriptions');
+
+    // If editing, keep the existing flags (cancel/reminder settings)
+    final old = widget.existing;
+
+    final updated = Subscription(
       subName: name,
       cost: cost,
       cycle: _cycle,
       nextDueMs: _dueDate.millisecondsSinceEpoch,
       category: _category,
+      isCancelled: old?.isCancelled ?? false,
+      remindersOn: old?.remindersOn ?? false,
+      remindDaysBefore: old?.remindDaysBefore ?? 3,
     );
 
-    final box = Hive.box<Subscription>('subscriptions');
-    await box.add(sub);
+    if (widget.existingKey != null) {
+      await box.put(widget.existingKey, updated);
+    } else {
+      await box.add(updated);
+    }
 
     if (!mounted) return;
     Navigator.pop(context);
@@ -62,10 +87,10 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final title = widget.existingKey == null ? 'Add Subscription' : 'Edit Subscription';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Subscription')),
+      appBar: AppBar(title: Text(title)),
       body: Padding(
         padding: const EdgeInsets.all(14),
         child: Form(
@@ -79,13 +104,9 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                   hintText: 'Netflix, Spotify...',
                   border: OutlineInputBorder(),
                 ),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return 'Enter a name';
-                  return null;
-                },
+                validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
               ),
               const SizedBox(height: 12),
-
               TextFormField(
                 controller: _costCtrl,
                 keyboardType: TextInputType.number,
@@ -102,7 +123,6 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 },
               ),
               const SizedBox(height: 12),
-
               DropdownButtonFormField<String>(
                 value: _cycle,
                 decoration: const InputDecoration(
@@ -116,7 +136,6 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 onChanged: (v) => setState(() => _cycle = v ?? 'Monthly'),
               ),
               const SizedBox(height: 12),
-
               DropdownButtonFormField<String>(
                 value: _category,
                 decoration: const InputDecoration(
@@ -133,26 +152,12 @@ class _AddSubscriptionScreenState extends State<AddSubscriptionScreen> {
                 onChanged: (v) => setState(() => _category = v ?? 'Other'),
               ),
               const SizedBox(height: 12),
-
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: scheme.outlineVariant),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Next due: ${_dueDate.toLocal().toString().split(' ').first}'),
-                    TextButton(
-                      onPressed: _pickDate,
-                      child: const Text('Pick date'),
-                    ),
-                  ],
-                ),
+              OutlinedButton.icon(
+                onPressed: _pickDate,
+                icon: const Icon(Icons.event),
+                label: Text('Next due: ${_dueDate.toLocal().toString().split(' ').first}'),
               ),
               const SizedBox(height: 18),
-
               ElevatedButton.icon(
                 onPressed: _save,
                 icon: const Icon(Icons.save),

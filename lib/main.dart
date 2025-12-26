@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+
 import 'models/subscription.dart';
 import 'screens/add_subscription.dart';
-
+import 'screens/subscription_details.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +28,6 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: scheme,
-        scaffoldBackgroundColor: scheme.surface,
       ),
       home: const MyHomePage(),
     );
@@ -50,12 +50,12 @@ class MyHomePage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Subscription Radar'),
-        centerTitle: false,
       ),
       body: ValueListenableBuilder(
         valueListenable: box.listenable(),
         builder: (context, Box<Subscription> b, _) {
           final subs = b.values.toList();
+          final keys = b.keys.cast<int>().toList();
 
           if (subs.isEmpty) {
             return Center(
@@ -72,7 +72,7 @@ class MyHomePage extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Tap + to add your first one.\nLong-press a card to delete.',
+                      'Tap Add to create one.\nThen tap a card for details.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
@@ -83,68 +83,64 @@ class MyHomePage extends StatelessWidget {
           }
 
           double totalMonthly = 0;
+          double totalYearly = 0;
           int dueSoon = 0;
+          int cancelled = 0;
+
           final now = DateTime.now();
 
           for (final s in subs) {
             totalMonthly += _monthlyCost(s);
 
-            final due = s.nextDueDate;
-            final diffDays = due.difference(now).inDays;
+            final isYearly = s.cycle.toLowerCase().startsWith('y');
+            totalYearly += isYearly ? s.cost : (s.cost * 12);
+
+            final diffDays = s.nextDueDate.difference(now).inDays;
             if (diffDays >= 0 && diffDays <= 7) dueSoon++;
+
+            if (s.isCancelled) cancelled++;
           }
 
           return Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
             child: Column(
               children: [
-                // Summary section (this makes it feel like a real app)
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        scheme.primaryContainer,
-                        scheme.secondaryContainer,
-                      ],
+                // Small summary tiles (what you asked for)
+                Row(
+                  children: [
+                    _MiniStat(
+                      title: 'Monthly',
+                      value: '₹${totalMonthly.toStringAsFixed(0)}',
+                      icon: Icons.payments,
                     ),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text(
-                        'Overview',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          _StatChip(
-                            label: 'Monthly',
-                            value: '₹${totalMonthly.toStringAsFixed(0)}',
-                            icon: Icons.payments,
-                          ),
-                          const SizedBox(width: 10),
-                          _StatChip(
-                            label: 'Active',
-                            value: '${subs.length}',
-                            icon: Icons.subscriptions,
-                          ),
-                          const SizedBox(width: 10),
-                          _StatChip(
-                            label: 'Due (7d)',
-                            value: '$dueSoon',
-                            icon: Icons.event,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    const SizedBox(width: 10),
+                    _MiniStat(
+                      title: 'Yearly',
+                      value: '₹${totalYearly.toStringAsFixed(0)}',
+                      icon: Icons.calendar_month,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    _MiniStat(
+                      title: 'Due (7d)',
+                      value: '$dueSoon',
+                      icon: Icons.event,
+                      accent: scheme.tertiaryContainer,
+                    ),
+                    const SizedBox(width: 10),
+                    _MiniStat(
+                      title: 'Cancelled',
+                      value: '$cancelled',
+                      icon: Icons.block,
+                      accent: scheme.errorContainer,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
 
-                // List
                 Expanded(
                   child: ListView.builder(
                     itemCount: subs.length,
@@ -152,45 +148,113 @@ class MyHomePage extends StatelessWidget {
                       final s = subs[i];
                       final due = s.nextDueDate.toLocal().toString().split(' ').first;
 
+                      final tileColor = s.isCancelled
+                          ? scheme.errorContainer.withOpacity(0.35)
+                          : scheme.surfaceContainerHighest;
+
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: scheme.outlineVariant),
-                          ),
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 6,
-                            ),
-                            title: Text(
-                              s.subName,
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            subtitle: Text('${s.cycle} • Due: $due'),
-                            trailing: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '₹${s.cost.toStringAsFixed(0)}',
-                                  style: const TextStyle(fontWeight: FontWeight.w800),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '≈ ₹${_monthlyCost(s).toStringAsFixed(0)}/mo',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: scheme.onSurfaceVariant,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => SubscriptionDetailsScreen(subKey: keys[i]),
+                              ),
+                            );
+                          },
+                          onLongPress: () async {
+                            final sure = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Text('Delete subscription?'),
+                                content: Text('Delete "${s.subName}"?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
                                   ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (sure == true) {
+                              await b.delete(keys[i]);
+                            }
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: tileColor,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: scheme.outlineVariant),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: scheme.primaryContainer,
+                                  child: Text(
+                                    s.subName.isNotEmpty ? s.subName[0].toUpperCase() : '?',
+                                    style: const TextStyle(fontWeight: FontWeight.w800),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              s.subName,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                          ),
+                                          if (s.isCancelled)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: scheme.errorContainer,
+                                                borderRadius: BorderRadius.circular(999),
+                                              ),
+                                              child: const Text(
+                                                'Cancelled',
+                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text('${s.cycle} • Due: $due • ${s.category}'),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '₹${s.cost.toStringAsFixed(0)}',
+                                      style: const TextStyle(fontWeight: FontWeight.w900),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '≈ ₹${_monthlyCost(s).toStringAsFixed(0)}/mo',
+                                      style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
-                            onLongPress: () async {
-                              await s.delete();
-                            },
                           ),
                         ),
                       );
@@ -204,12 +268,11 @@ class MyHomePage extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AddSubscriptionScreen()),
-            );
-          },
-
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddSubscriptionScreen()),
+          );
+        },
         icon: const Icon(Icons.add),
         label: const Text('Add'),
       ),
@@ -217,15 +280,17 @@ class MyHomePage extends StatelessWidget {
   }
 }
 
-class _StatChip extends StatelessWidget {
-  final String label;
+class _MiniStat extends StatelessWidget {
+  final String title;
   final String value;
   final IconData icon;
+  final Color? accent;
 
-  const _StatChip({
-    required this.label,
+  const _MiniStat({
+    required this.title,
     required this.value,
     required this.icon,
+    this.accent,
   });
 
   @override
@@ -234,30 +299,23 @@ class _StatChip extends StatelessWidget {
 
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: scheme.surface.withOpacity(0.6),
-          borderRadius: BorderRadius.circular(14),
+          color: accent ?? scheme.primaryContainer,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: scheme.outlineVariant),
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: scheme.primary),
+            Icon(icon, size: 18),
             const SizedBox(width: 8),
-            Flexible(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    label,
-                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                  ),
+                  Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 2),
-                  Text(
-                    value,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
                 ],
               ),
             ),
